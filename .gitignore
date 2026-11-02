@@ -1,0 +1,4 @@
+.work/
+arduino-user/
+node_modules/
+.DS_Store

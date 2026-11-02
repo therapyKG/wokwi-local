@@ -1,0 +1,14 @@
+{
+  "manifest_version": 3,
+  "name": "Wokwi Local Build",
+  "version": "1.0.0",
+  "description": "Routes wokwi.com compile requests to a local arduino-cli server instead of the cloud build queue.",
+  "content_scripts": [
+    {
+      "matches": ["https://wokwi.com/*"],
+      "js": ["inject.js"],
+      "run_at": "document_start",
+      "world": "MAIN"
+    }
+  ]
+}

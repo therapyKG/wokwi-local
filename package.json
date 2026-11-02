@@ -1,0 +1,12 @@
+{
+  "name": "wokwi-local",
+  "private": true,
+  "description": "Compile wokwi.com sketches locally with arduino-cli instead of Wokwi's cloud build queue.",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test test/portable.test.js test/extension.test.js test/build.test.js"
+  }
+}

@@ -1,0 +1,34 @@
+name: test
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: arduino/setup-arduino-cli@v2
+
+      # Apple Silicon runners need Rosetta for the Intel-only tools Arduino bundles.
+      - name: Install Rosetta
+        if: runner.os == 'macOS'
+        run: softwareupdate --install-rosetta --agree-to-license || true
+
+      - name: Show disk space
+        shell: bash
+        run: df -h . || true
+
+      - run: npm test
