@@ -10,6 +10,39 @@ The simulator still runs in the wokwi.com page as usual; only the compile step m
 
 ## Setup
 
+Clone this repo somewhere permanent, then run the setup script for your OS from inside it:
+
+| OS | Command |
+| --- | --- |
+| macOS, Linux | `./setup.sh` |
+| Windows | `powershell -ExecutionPolicy Bypass -File setup.ps1` |
+
+The script:
+
+1. Finds Node 18+ and `arduino-cli`, or downloads them (checksum-verified) into
+   `~/.local/share/wokwi-local` (Windows: `%LOCALAPPDATA%\wokwi-local`). Nothing is installed
+   system-wide and no admin rights are needed.
+2. On Apple Silicon Macs, installs Rosetta, which some Intel-only Arduino tools need. Apple asks
+   you to accept its license.
+3. Starts the server now and at every login: a launchd agent on macOS, a systemd user service on
+   Linux (or a desktop autostart entry where systemd isn't available), a Task Scheduler task on
+   Windows. It runs in the background with no window.
+4. Prints the steps for loading the extension, puts the extension folder's path on your clipboard,
+   and opens the browser's extensions page. Browsers don't let scripts add unpacked extensions,
+   so that part is up to you.
+
+Options: `--preload uno,pico,esp32` (`-Preload` on Windows) downloads those boards' cores up
+front instead of on first build; `--uninstall` (`-Uninstall`) stops the server and removes the
+login item. Running setup again is safe, and it's needed if you move the folder.
+
+The server logs each build to `~/Library/Logs/wokwi-local.log` (macOS),
+`~/.local/state/wokwi-local.log` (Linux) or `%LOCALAPPDATA%\wokwi-local\server.log` (Windows).
+
+On macOS, keep the folder out of Desktop, Documents and Downloads: macOS blocks background
+services from reading those folders unless you grant access.
+
+### Manual setup
+
 You need Node 18 or newer and `arduino-cli`. The server runs on macOS, Windows and Linux.
 
 | OS | Install arduino-cli | Notes |
@@ -72,4 +105,5 @@ any missing cores, which takes a while (ESP32 is a few GB). To test only some bo
 `WOKWI_TEST_BOARDS=uno,pipico npm test`.
 
 GitHub Actions runs the same tests on Windows, Linux and macOS for every push
-(`.github/workflows/test.yml`).
+(`.github/workflows/test.yml`). It also runs the setup scripts on all three, compiles through the
+login service they install, runs setup a second time, and checks that uninstall removes it.

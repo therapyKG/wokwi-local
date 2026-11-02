@@ -9,12 +9,22 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const { spawn } = require('node:child_process');
 
+// Command-line options, used by the setup scripts' login services:
+//   --arduino-cli <path>   arduino-cli to use (services don't get your shell's PATH)
+//   --log <file>           also append log lines to this file
+//   --install-cores <ids>  install cores (e.g. arduino:avr,esp32:esp32) and exit
+function option(name) {
+  const i = process.argv.indexOf(name);
+  return i === -1 ? undefined : process.argv[i + 1];
+}
+
 const PORT = Number(process.env.PORT) || 9420;
 const HOST = '127.0.0.1';
 const ROOT = __dirname;
 // Override with a short path (e.g. C:\wl) if Windows builds hit path-length limits.
 const WORK = process.env.WOKWI_LOCAL_WORK || path.join(ROOT, '.work');
-const ARDUINO_CLI = process.env.ARDUINO_CLI || 'arduino-cli';
+const ARDUINO_CLI = option('--arduino-cli') || process.env.ARDUINO_CLI || 'arduino-cli';
+const LOG_FILE = option('--log');
 const ALLOWED_ORIGINS = new Set(['https://wokwi.com']);
 const CACHE_LIMIT = 50;
 
@@ -81,7 +91,13 @@ function run(args, { cwd } = {}) {
 }
 
 function log(...args) {
-  console.log(new Date().toISOString().slice(11, 19), ...args);
+  const line = [new Date().toISOString().slice(11, 19), ...args].join(' ');
+  console.log(line);
+  if (LOG_FILE) {
+    try {
+      fs.appendFileSync(LOG_FILE, line + '\n');
+    } catch {}
+  }
 }
 
 // --- Cores ---------------------------------------------------------------
@@ -394,8 +410,41 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
+async function installCores(ids) {
+  for (const id of ids.split(',').filter(Boolean)) {
+    const notes = [];
+    await ensurePlatform(id, notes);
+    log(notes.length ? notes.join('\n') : `core ${id} already installed`);
+  }
+}
+
 if (require.main === module) {
-  server.listen(PORT, HOST, () => log(`wokwi-local listening on http://${HOST}:${PORT}`));
+  if (LOG_FILE) {
+    // Keep the log from growing forever: start over once it passes 5 MB.
+    try {
+      if (fs.statSync(LOG_FILE).size > 5e6) fs.renameSync(LOG_FILE, LOG_FILE + '.old');
+    } catch {}
+  }
+  if (option('--install-cores')) {
+    installCores(option('--install-cores')).catch((err) => {
+      log(`error: ${err.message}`);
+      process.exitCode = 1;
+    });
+  } else {
+    // If another copy holds the port (say, one started by hand), wait for it rather than exiting,
+    // so a login service takes over when it stops instead of restarting over and over.
+    let waiting = false;
+    server.on('error', (err) => {
+      if (err.code !== 'EADDRINUSE') {
+        log(`error: ${err.message}`);
+        process.exit(1);
+      }
+      if (!waiting) log(`port ${PORT} is in use (another wokwi-local?); retrying every 10s`);
+      waiting = true;
+      setTimeout(() => server.listen(PORT, HOST), 10000);
+    });
+    server.listen(PORT, HOST, () => log(`wokwi-local listening on http://${HOST}:${PORT}`));
+  }
 }
 
 module.exports = { skipFlags, safeRelPath, tidyPaths };

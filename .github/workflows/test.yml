@@ -32,3 +32,80 @@ jobs:
         run: df -h . || true
 
       - run: npm test
+
+  # Runs the setup scripts the way a user would, on a machine without arduino-cli, and checks that
+  # the login service builds sketches, that setup can be repeated, and that uninstall cleans up.
+  setup:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    env:
+      # Download Node and arduino-cli even though the runner already has Node.
+      WOKWI_SETUP_FORCE_DOWNLOAD: 1
+    steps:
+      - uses: actions/checkout@v4
+
+      # GitHub's Linux runners have no systemd user session until lingering is turned on.
+      - name: Start a systemd user session
+        if: runner.os == 'Linux'
+        run: |
+          sudo loginctl enable-linger "$USER"
+          echo "XDG_RUNTIME_DIR=/run/user/$(id -u)" >> "$GITHUB_ENV"
+          for _ in $(seq 30); do [ -S "/run/user/$(id -u)/bus" ] && break; sleep 1; done
+
+      - name: Run setup.sh
+        if: runner.os != 'Windows'
+        run: ./setup.sh --yes --preload uno
+
+      - name: Run setup.ps1 (Windows PowerShell 5.1)
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: .\setup.ps1 -Preload uno
+
+      - name: Compile through the installed server
+        run: node test/setup-check.js
+
+      - name: Check the login item (macOS)
+        if: runner.os == 'macOS'
+        run: launchctl print "gui/$(id -u)/com.wokwi-local.server" | grep -E "state =|program ="
+
+      - name: Check the login item (Linux)
+        if: runner.os == 'Linux'
+        run: systemctl --user is-enabled wokwi-local.service && systemctl --user is-active wokwi-local.service
+
+      - name: Check the login item (Windows)
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: |
+          Get-ScheduledTask -TaskName wokwi-local | Format-List TaskName, State
+          Get-Content "$env:LOCALAPPDATA\wokwi-local\server.log"
+
+      - name: Run setup again (macOS/Linux)
+        if: runner.os != 'Windows'
+        run: ./setup.sh --yes && node test/setup-check.js
+
+      - name: Run setup again (PowerShell 7)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: .\setup.ps1; node test/setup-check.js
+
+      - name: Uninstall (macOS/Linux)
+        if: runner.os != 'Windows'
+        run: ./setup.sh --uninstall
+
+      - name: Uninstall (Windows)
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: |
+          .\setup.ps1 -Uninstall
+          if (Get-ScheduledTask -TaskName wokwi-local -ErrorAction SilentlyContinue) { throw 'login task still registered' }
+
+      - name: Check the server is gone
+        shell: bash
+        run: |
+          sleep 2
+          if curl -fsS -m 2 http://127.0.0.1:9420/health; then echo "server still running after uninstall"; exit 1; fi
+          echo "server stopped"
